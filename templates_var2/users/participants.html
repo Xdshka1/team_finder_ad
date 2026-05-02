@@ -17,32 +17,20 @@
         </div>
     </div>
 
-    {% if request.user.is_authenticated %}
-        <div class="participants-filter">
-            <span class="filter-label">Фильтры пользователей:</span>
-            <div class="filter-chips">
-                <a href="?filter=owners-of-favorite-projects"
-                   class="filter-chip {% if active_filter == 'owners-of-favorite-projects' %}active{% endif %}">
-                    Авторы избранных проектов
-                </a>
-                <a href="?filter=owners-of-participating-projects"
-                   class="filter-chip {% if active_filter == 'owners-of-participating-projects' %}active{% endif %}">
-                    Авторы проектов, в которых я участвую
-                </a>
-                <a href="?filter=interested-in-my-projects"
-                   class="filter-chip {% if active_filter == 'interested-in-my-projects' %}active{% endif %}">
-                    Пользователи, которым нравятся мои проекты
-                </a>
-                <a href="?filter=participants-of-my-projects"
-                   class="filter-chip {% if active_filter == 'participants-of-my-projects' %}active{% endif %}">
-                    Участники моих проектов
-                </a>
-                {% if active_filter %}
-                <a href="/users/list" class="filter-reset">Сбросить</a>
-                {% endif %}
-            </div>
+    <div class="skills-filter">
+        <span class="filter-label">Фильтр по навыкам:</span>
+        <div class="filter-chips">
+            {% for skill in all_skills %}
+            <a href="?skill={{ skill }}"
+               class="filter-chip {% if active_skill == skill %}active{% endif %}">
+                {{ skill }}
+            </a>
+            {% endfor %}
+            {% if active_skill %}
+            <a href="/users/list" class="filter-reset">Сбросить</a>
+            {% endif %}
         </div>
-    {% endif %}
+    </div>
 
     {% if participants %}
     <div class="participants-grid">

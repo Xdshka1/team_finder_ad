@@ -56,7 +56,7 @@
         {% endfor %}
     </div>
     {% else %}
-    {% include 'includes/empty-project-card.html' with empty_title="Пока нет участников" empty_message="Попробуйте сбросить фильтр" button_link="/users/list" button_text="Сбросить" %}
+    {% include 'includes/empty-project-card.html' with empty_title="Пока нет участников" empty_message="Попробуйте сбросить фильтр по навыкам" button_link="/users/list" button_text="Сбросить" %}
     {% endif %}
 </div>
 {% endblock %}

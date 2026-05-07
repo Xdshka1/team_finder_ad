@@ -72,16 +72,17 @@ span svg {
 }
 
 .black-button {
-    display: flex;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
     padding: 10px 20px;
     background-color: #000;
     color: white;
     border-radius: 8px;
     text-decoration: none;
-}
-
-.black-button svg {
-    margin-top: 4px;
+    white-space: nowrap;
+    font-size: 14px;
+    transition: background-color 0.2s;
 }
 
 .project-status {

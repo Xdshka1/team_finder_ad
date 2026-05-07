@@ -81,15 +81,6 @@
     justify-content: flex-end
 }
 
-.project-actions .project-fav-icon {
-    align-items: center;
-    justify-content: center;
-}
-
-.project-actions .project-fav-icon svg {
-    margin-top: 0;
-}
-
 .project-participants-card {
     background: #fff;
     border: 1px solid #ddd;

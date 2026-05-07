@@ -85,6 +85,10 @@ span svg {
     transition: background-color 0.2s;
 }
 
+.black-button svg {
+    margin: 0;
+}
+
 .project-status {
     font-size: 12px;
     background: #eee;

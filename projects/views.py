@@ -1,8 +1,11 @@
-﻿from django.contrib.auth.decorators import login_required
-from django.core.paginator import Paginator
+from http import HTTPStatus
+
+from django.contrib.auth.decorators import login_required
 from django.http import JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.views.decorators.http import require_POST
+
+from team_finder.utils import get_query_prefix, paginate_queryset
 
 from .forms import ProjectForm
 from .models import Project
@@ -10,15 +13,29 @@ from .models import Project
 
 PROJECTS_PER_PAGE = 12
 
+PROJECT_ORDERING_BY_NEWEST = "-created_at"
 
-def _query_prefix(request):
-    params = request.GET.copy()
-    params.pop("page", None)
+PROJECT_LIST_TEMPLATE = "projects/project_list.html"
+FAVORITE_PROJECTS_TEMPLATE = "projects/favorite_projects.html"
+PROJECT_DETAIL_TEMPLATE = "projects/project-details.html"
+CREATE_PROJECT_TEMPLATE = "projects/create-project.html"
 
-    if params:
-        return params.urlencode() + "&"
+JSON_STATUS_KEY = "status"
+JSON_STATUS_OK = "ok"
+JSON_STATUS_ERROR = "error"
 
-    return ""
+JSON_DETAIL_KEY = "detail"
+JSON_LOGIN_REQUIRED = "login_required"
+JSON_FORBIDDEN = "forbidden"
+JSON_NOT_FOUND = "not_found"
+JSON_ALREADY_CLOSED = "already_closed"
+JSON_OWNER_IS_ALREADY_PARTICIPANT = "owner_is_already_participant"
+
+JSON_FAVORITED_KEY = "favorited"
+JSON_PARTICIPANT_KEY = "participant"
+JSON_PROJECT_STATUS_KEY = "project_status"
+
+PROJECT_STATUS_UPDATE_FIELDS = ["status"]
 
 
 def project_list(request):
@@ -26,37 +43,38 @@ def project_list(request):
         Project.objects
         .select_related("owner")
         .prefetch_related("participants")
-        .order_by("-created_at")
+        .order_by(PROJECT_ORDERING_BY_NEWEST)
     )
-
-    paginator = Paginator(projects, PROJECTS_PER_PAGE)
-    page_obj = paginator.get_page(request.GET.get("page"))
+    page_obj = paginate_queryset(request, projects, PROJECTS_PER_PAGE)
 
     return render(
         request,
-        "projects/project_list.html",
+        PROJECT_LIST_TEMPLATE,
         {
             "projects": projects,
             "page_obj": page_obj,
-            "query_prefix": _query_prefix(request),
+            "query_prefix": get_query_prefix(request),
         },
     )
 
 
-@login_required(login_url="/users/login/")
+@login_required(login_url="users:login")
 def favorite_projects(request):
     projects = (
         request.user.favorites
         .select_related("owner")
         .prefetch_related("participants")
-        .order_by("-created_at")
+        .order_by(PROJECT_ORDERING_BY_NEWEST)
     )
+    page_obj = paginate_queryset(request, projects, PROJECTS_PER_PAGE)
 
     return render(
         request,
-        "projects/favorite_projects.html",
+        FAVORITE_PROJECTS_TEMPLATE,
         {
             "projects": projects,
+            "page_obj": page_obj,
+            "query_prefix": get_query_prefix(request),
         },
     )
 
@@ -67,10 +85,10 @@ def project_detail(request, pk):
         pk=pk,
     )
 
-    return render(request, "projects/project-details.html", {"project": project})
+    return render(request, PROJECT_DETAIL_TEMPLATE, {"project": project})
 
 
-@login_required(login_url="/users/login/")
+@login_required(login_url="users:login")
 def create_project(request):
     if request.method == "POST":
         form = ProjectForm(request.POST)
@@ -80,13 +98,13 @@ def create_project(request):
             project.owner = request.user
             project.save()
             project.participants.add(request.user)
-            return redirect(f"/projects/{project.pk}/")
+            return redirect("projects:detail", pk=project.pk)
     else:
         form = ProjectForm(initial={"status": Project.STATUS_OPEN})
 
     return render(
         request,
-        "projects/create-project.html",
+        CREATE_PROJECT_TEMPLATE,
         {
             "form": form,
             "is_edit": False,
@@ -94,25 +112,25 @@ def create_project(request):
     )
 
 
-@login_required(login_url="/users/login/")
+@login_required(login_url="users:login")
 def edit_project(request, pk):
     project = get_object_or_404(Project, pk=pk)
 
     if request.user != project.owner and not request.user.is_staff:
-        return redirect(f"/projects/{project.pk}/")
+        return redirect("projects:detail", pk=project.pk)
 
     if request.method == "POST":
         form = ProjectForm(request.POST, instance=project)
 
         if form.is_valid():
             project = form.save()
-            return redirect(f"/projects/{project.pk}/")
+            return redirect("projects:detail", pk=project.pk)
     else:
         form = ProjectForm(instance=project)
 
     return render(
         request,
-        "projects/create-project.html",
+        CREATE_PROJECT_TEMPLATE,
         {
             "form": form,
             "is_edit": True,
@@ -123,27 +141,30 @@ def edit_project(request, pk):
 @require_POST
 def toggle_favorite(request, pk):
     if not request.user.is_authenticated:
-        return JsonResponse(
-            {
-                "status": "error",
-                "detail": "login_required",
-            },
-            status=401,
+        return _json_error(
+            JSON_LOGIN_REQUIRED,
+            HTTPStatus.UNAUTHORIZED,
         )
 
-    project = get_object_or_404(Project, pk=pk)
+    project = _get_project_for_json_response(pk)
 
-    if request.user.favorites.filter(pk=project.pk).exists():
+    if project is None:
+        return _json_error(
+            JSON_NOT_FOUND,
+            HTTPStatus.NOT_FOUND,
+        )
+
+    is_favorited = request.user.favorites.filter(pk=project.pk).exists()
+
+    if is_favorited:
         request.user.favorites.remove(project)
-        favorited = False
     else:
         request.user.favorites.add(project)
-        favorited = True
 
     return JsonResponse(
         {
-            "status": "ok",
-            "favorited": favorited,
+            JSON_STATUS_KEY: JSON_STATUS_OK,
+            JSON_FAVORITED_KEY: not is_favorited,
         }
     )
 
@@ -151,41 +172,38 @@ def toggle_favorite(request, pk):
 @require_POST
 def complete_project(request, pk):
     if not request.user.is_authenticated:
-        return JsonResponse(
-            {
-                "status": "error",
-                "detail": "login_required",
-            },
-            status=401,
+        return _json_error(
+            JSON_LOGIN_REQUIRED,
+            HTTPStatus.UNAUTHORIZED,
         )
 
-    project = get_object_or_404(Project, pk=pk)
+    project = _get_project_for_json_response(pk)
+
+    if project is None:
+        return _json_error(
+            JSON_NOT_FOUND,
+            HTTPStatus.NOT_FOUND,
+        )
 
     if request.user != project.owner and not request.user.is_staff:
-        return JsonResponse(
-            {
-                "status": "error",
-                "detail": "forbidden",
-            },
-            status=403,
+        return _json_error(
+            JSON_FORBIDDEN,
+            HTTPStatus.FORBIDDEN,
         )
 
     if project.status != Project.STATUS_OPEN:
-        return JsonResponse(
-            {
-                "status": "error",
-                "detail": "already_closed",
-            },
-            status=400,
+        return _json_error(
+            JSON_ALREADY_CLOSED,
+            HTTPStatus.BAD_REQUEST,
         )
 
     project.status = Project.STATUS_CLOSED
-    project.save(update_fields=["status"])
+    project.save(update_fields=PROJECT_STATUS_UPDATE_FIELDS)
 
     return JsonResponse(
         {
-            "status": "ok",
-            "project_status": Project.STATUS_CLOSED,
+            JSON_STATUS_KEY: JSON_STATUS_OK,
+            JSON_PROJECT_STATUS_KEY: Project.STATUS_CLOSED,
         }
     )
 
@@ -193,35 +211,49 @@ def complete_project(request, pk):
 @require_POST
 def toggle_participate(request, pk):
     if not request.user.is_authenticated:
-        return JsonResponse(
-            {
-                "status": "error",
-                "detail": "login_required",
-            },
-            status=401,
+        return _json_error(
+            JSON_LOGIN_REQUIRED,
+            HTTPStatus.UNAUTHORIZED,
         )
 
-    project = get_object_or_404(Project, pk=pk)
+    project = _get_project_for_json_response(pk)
+
+    if project is None:
+        return _json_error(
+            JSON_NOT_FOUND,
+            HTTPStatus.NOT_FOUND,
+        )
 
     if request.user == project.owner:
-        return JsonResponse(
-            {
-                "status": "error",
-                "detail": "owner_is_already_participant",
-            },
-            status=403,
+        return _json_error(
+            JSON_OWNER_IS_ALREADY_PARTICIPANT,
+            HTTPStatus.FORBIDDEN,
         )
 
-    if project.participants.filter(pk=request.user.pk).exists():
+    is_participant = project.participants.filter(pk=request.user.pk).exists()
+
+    if is_participant:
         project.participants.remove(request.user)
-        participant = False
     else:
         project.participants.add(request.user)
-        participant = True
 
     return JsonResponse(
         {
-            "status": "ok",
-            "participant": participant,
+            JSON_STATUS_KEY: JSON_STATUS_OK,
+            JSON_PARTICIPANT_KEY: not is_participant,
         }
+    )
+
+
+def _get_project_for_json_response(pk):
+    return Project.objects.filter(pk=pk).first()
+
+
+def _json_error(detail, status):
+    return JsonResponse(
+        {
+            JSON_STATUS_KEY: JSON_STATUS_ERROR,
+            JSON_DETAIL_KEY: detail,
+        },
+        status=status,
     )

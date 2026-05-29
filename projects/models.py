@@ -1,23 +1,44 @@
-﻿from django.conf import settings
+from django.conf import settings
 from django.db import models
 
 
+PROJECT_NAME_MAX_LENGTH = 200
+PROJECT_STATUS_MAX_LENGTH = 6
+
+STATUS_OPEN = "open"
+STATUS_CLOSED = "closed"
+
+STATUS_OPEN_VERBOSE = "Open"
+STATUS_CLOSED_VERBOSE = "Closed"
+
+PROJECT_OWNER_RELATED_NAME = "owned_projects"
+PROJECT_PARTICIPANTS_RELATED_NAME = "participated_projects"
+
+PROJECT_ORDERING_BY_NEWEST = "-created_at"
+
+
 class Project(models.Model):
-    STATUS_OPEN = "open"
-    STATUS_CLOSED = "closed"
+    STATUS_OPEN = STATUS_OPEN
+    STATUS_CLOSED = STATUS_CLOSED
 
     STATUS_CHOICES = [
-        (STATUS_OPEN, "Open"),
-        (STATUS_CLOSED, "Closed"),
+        (STATUS_OPEN, STATUS_OPEN_VERBOSE),
+        (STATUS_CLOSED, STATUS_CLOSED_VERBOSE),
     ]
 
-    name = models.CharField("название", max_length=200)
-    description = models.TextField("описание", blank=True)
+    name = models.CharField(
+        "название",
+        max_length=PROJECT_NAME_MAX_LENGTH,
+    )
+    description = models.TextField(
+        "описание",
+        blank=True,
+    )
 
     owner = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.CASCADE,
-        related_name="owned_projects",
+        related_name=PROJECT_OWNER_RELATED_NAME,
         verbose_name="автор",
     )
 
@@ -27,11 +48,14 @@ class Project(models.Model):
         db_index=True,
     )
 
-    github_url = models.URLField("GitHub", blank=True)
+    github_url = models.URLField(
+        "GitHub",
+        blank=True,
+    )
 
     status = models.CharField(
         "статус",
-        max_length=6,
+        max_length=PROJECT_STATUS_MAX_LENGTH,
         choices=STATUS_CHOICES,
         default=STATUS_OPEN,
     )
@@ -39,12 +63,12 @@ class Project(models.Model):
     participants = models.ManyToManyField(
         settings.AUTH_USER_MODEL,
         blank=True,
-        related_name="participated_projects",
+        related_name=PROJECT_PARTICIPANTS_RELATED_NAME,
         verbose_name="участники",
     )
 
     class Meta:
-        ordering = ["-created_at"]
+        ordering = [PROJECT_ORDERING_BY_NEWEST]
         verbose_name = "проект"
         verbose_name_plural = "проекты"
 

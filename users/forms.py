@@ -1,44 +1,20 @@
-﻿import re
-from urllib.parse import urlparse
-
 from django import forms
 from django.contrib.auth import authenticate
-from django.contrib.auth.forms import PasswordChangeForm
 
 from .models import User
-
-
-PHONE_RE = re.compile(r"^(8\d{10}|\+7\d{10})$")
-
-
-def normalize_phone(phone):
-    phone = (phone or "").strip()
-
-    if phone.startswith("8") and len(phone) == 11:
-        return "+7" + phone[1:]
-
-    return phone
-
-
-def validate_github_url(value):
-    value = (value or "").strip()
-
-    if not value:
-        return value
-
-    parsed = urlparse(value)
-
-    if parsed.scheme not in {"http", "https"} or not parsed.netloc:
-        raise forms.ValidationError("Введите корректную ссылку.")
-
-    if parsed.netloc.lower() not in {"github.com", "www.github.com"}:
-        raise forms.ValidationError("Ссылка должна вести на GitHub.")
-
-    return value
+from .utils import (
+    PHONE_MAX_LENGTH,
+    PROFILE_ABOUT_TEXTAREA_ROWS,
+    validate_github_url,
+    validate_phone,
+)
 
 
 class RegisterForm(forms.ModelForm):
-    password = forms.CharField(label="Пароль", widget=forms.PasswordInput)
+    password = forms.CharField(
+        label="Пароль",
+        widget=forms.PasswordInput,
+    )
 
     class Meta:
         model = User
@@ -70,7 +46,10 @@ class RegisterForm(forms.ModelForm):
 
 class LoginForm(forms.Form):
     email = forms.EmailField(label="Email")
-    password = forms.CharField(label="Пароль", widget=forms.PasswordInput)
+    password = forms.CharField(
+        label="Пароль",
+        widget=forms.PasswordInput,
+    )
 
     def clean(self):
         cleaned_data = super().clean()
@@ -90,7 +69,11 @@ class LoginForm(forms.Form):
 
 
 class EditProfileForm(forms.ModelForm):
-    phone = forms.CharField(label="Телефон", max_length=12, required=True)
+    phone = forms.CharField(
+        label="Телефон",
+        max_length=PHONE_MAX_LENGTH,
+        required=True,
+    )
 
     class Meta:
         model = User
@@ -104,33 +87,16 @@ class EditProfileForm(forms.ModelForm):
             "github_url": "GitHub",
         }
         widgets = {
-            "about": forms.Textarea(attrs={"rows": 4}),
+            "about": forms.Textarea(
+                attrs={"rows": PROFILE_ABOUT_TEXTAREA_ROWS}
+            ),
         }
 
     def clean_phone(self):
-        phone = normalize_phone(self.cleaned_data.get("phone"))
-
-        if not phone:
-            raise forms.ValidationError("Введите номер телефона.")
-
-        if not PHONE_RE.match(phone):
-            raise forms.ValidationError(
-                "Телефон должен быть в формате 8XXXXXXXXXX или +7XXXXXXXXXX."
-            )
-
-        users = User.objects.filter(phone=phone)
-
-        if self.instance.pk:
-            users = users.exclude(pk=self.instance.pk)
-
-        if users.exists():
-            raise forms.ValidationError("Пользователь с таким телефоном уже существует.")
-
-        return phone
+        return validate_phone(
+            self.cleaned_data.get("phone"),
+            user_instance=self.instance,
+        )
 
     def clean_github_url(self):
         return validate_github_url(self.cleaned_data.get("github_url"))
-
-
-class UserPasswordChangeForm(PasswordChangeForm):
-    pass

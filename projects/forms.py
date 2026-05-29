@@ -1,8 +1,7 @@
-﻿from urllib.parse import urlparse
-
 from django import forms
 
 from .models import Project
+from .utils import PROJECT_DESCRIPTION_TEXTAREA_ROWS, validate_github_url
 
 
 class ProjectForm(forms.ModelForm):
@@ -16,21 +15,10 @@ class ProjectForm(forms.ModelForm):
             "status": "Статус",
         }
         widgets = {
-            "description": forms.Textarea(attrs={"rows": 6}),
+            "description": forms.Textarea(
+                attrs={"rows": PROJECT_DESCRIPTION_TEXTAREA_ROWS}
+            ),
         }
 
     def clean_github_url(self):
-        value = (self.cleaned_data.get("github_url") or "").strip()
-
-        if not value:
-            return value
-
-        parsed = urlparse(value)
-
-        if parsed.scheme not in {"http", "https"} or not parsed.netloc:
-            raise forms.ValidationError("Введите корректную ссылку.")
-
-        if parsed.netloc.lower() not in {"github.com", "www.github.com"}:
-            raise forms.ValidationError("Ссылка должна вести на GitHub.")
-
-        return value
+        return validate_github_url(self.cleaned_data.get("github_url"))
